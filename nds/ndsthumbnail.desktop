@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Service
+Name=NDS Files
+X-KDE-ServiceTypes=ThumbCreator
+MimeType=application/x-nintendo-ds-rom;
+CacheThumbnail=true
+X-KDE-Library=ndsthumbnail
