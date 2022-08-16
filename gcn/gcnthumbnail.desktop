@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Service
+Name=Game Cube Files
+X-KDE-ServiceTypes=ThumbCreator
+MimeType=application/x-gamecube-rom;
+CacheThumbnail=true
+X-KDE-Library=gcnthumbnail

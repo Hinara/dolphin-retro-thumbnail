@@ -18,5 +18,6 @@ find_package(KF5 ${KF5_MIN_VERSION} REQUIRED COMPONENTS KIO)
 add_definitions(-DQT_USE_QSTRINGBUILDER)
 
 ecm_optional_add_subdirectory(nds)
+ecm_optional_add_subdirectory(gcn)
 
 feature_summary(WHAT ALL INCLUDE_QUIET_PACKAGES FATAL_ON_MISSING_REQUIRED_PACKAGES)
