@@ -1,19 +1,40 @@
 #include "ndsthumbnail.h"
-#include "nds_banner.h"
+#include <KPluginFactory>
 #include <QFile>
 #include <QImage>
 #include <QtEndian>
 #include <QVector>
+#include <stdint.h>
 
-#include <iostream>
 
-extern "C"
+K_PLUGIN_CLASS_WITH_JSON(NDSThumbnail, "ndsthumbnail.json")
+
+NDSThumbnail::NDSThumbnail(QObject *parent, const QVariantList &args)
+    : KIO::ThumbnailCreator(parent, args)
 {
-    Q_DECL_EXPORT ThumbCreator *new_creator()
-    {
-        return new NDSThumbnail();
-    }
+}
+
+struct NDSBanner
+{
+    uint16_t version;
+    uint16_t crc16[4];
+    uint8_t reserved1[22];
+    uint8_t bitmap[512];
+    uint16_t palette[16];
+
+    char16_t jp_title[128];
+    char16_t en_title[128];
+    char16_t fr_title[128];
+    char16_t de_title[128];
+    char16_t it_title[128];
+    char16_t es_title[128];
+    char16_t cn_title[128];
+    char16_t kr_title[128];
+
+    uint8_t reserved2[2048];
 };
+
+static_assert(sizeof(NDSBanner) == 4672, "NDSBanner is not 4672 bytes!");
 
 static const size_t BANNER_OFFSET = 0x68;
 
@@ -26,15 +47,15 @@ static uint32_t RGB555_to_ARGB32(uint16_t value)
         (value & 0x7C00) >> 7;
 }
 
-static bool createImageFromBanner(const NDSBanner &banner, int width, int height, QImage &img)
+static KIO::ThumbnailResult createImageFromBanner(const NDSBanner &banner, QSize size)
 {
-    int smallest = width < height ? width : height;
+    auto smallest = size.width() < size.height() ? size.width() : size.height();
     if (banner.version != 0x0001 &&
         banner.version != 0x0002 &&
         banner.version != 0x0003 &&
         banner.version != 0x0103) {
         qWarning("Unknown NDS banner version");
-        return false;
+        return KIO::ThumbnailResult::fail();
     }
     QVector<uint32_t> palette(16);
     palette[0] = 0x00000000;
@@ -49,33 +70,33 @@ static bool createImageFromBanner(const NDSBanner &banner, int width, int height
         pixels.data()[i * 4 + 3] = 0xFF;
     }
     size_t pos = 0;
-	for (size_t j = 0; j < 4; j++) {
-		for (size_t i = 0; i < 4; i++) {
-			for (size_t y = 0; y < 8; y++) {
-				for (size_t x = 0; x < 4; x++) {
+    for (size_t j = 0; j < 4; j++) {
+        for (size_t i = 0; i < 4; i++) {
+            for (size_t y = 0; y < 8; y++) {
+                for (size_t x = 0; x < 4; x++) {
                     uint8_t tile_data = banner.bitmap[pos];
                     size_t bx = x * 2 + i * 8;
                     size_t by = y + j * 8;
                     size_t base = bx + by * 32;
                     memcpy(pixels.data() + (0 + base) * sizeof(uint32_t), palette.data() + ((tile_data & 0x0F) >> 0), sizeof(uint32_t));
                     memcpy(pixels.data() + (1 + base) * sizeof(uint32_t), palette.data() + ((tile_data & 0xF0) >> 4), sizeof(uint32_t));
-					pos++;
-				}
-			}
-		}
-	}
-    img = QImage((const uchar*)pixels.constData(), 32, 32, 32 * sizeof(uint32_t), QImage::Format_ARGB32);
+                    pos++;
+                }
+            }
+        }
+    }
+    QImage img = QImage((const uchar*)pixels.constData(), 32, 32, 32 * sizeof(uint32_t), QImage::Format_ARGB32);
     int base = 32;
     while (base < smallest) {
         base <<= 1;
     }
     img = img.scaledToWidth(base);
-    return true;
+    return KIO::ThumbnailResult::pass(img);
 }
 
-static bool getNDSBanner(const QString &path, NDSBanner &banner)
+static bool getNDSBanner(const QUrl &url, NDSBanner &banner)
 {
-    QFile file (path);
+    QFile file (url.toLocalFile());
 
     quint32 offset;
     QByteArray offset_array(sizeof(offset), '\0');
@@ -94,7 +115,6 @@ static bool getNDSBanner(const QString &path, NDSBanner &banner)
         return false;
     }
     offset = qFromLittleEndian<quint32>(offset_array);
-    std::cout << std::hex << offset << std::endl;
     if (offset < BANNER_OFFSET + sizeof(offset) ||
         ndsStream.skipRawData(offset - (BANNER_OFFSET + sizeof(offset))) != offset - (BANNER_OFFSET + sizeof(offset)) ||
         ndsStream.readRawData(banner_array.data(), sizeof(banner)) != sizeof(banner)
@@ -108,9 +128,15 @@ static bool getNDSBanner(const QString &path, NDSBanner &banner)
     return true;
 }
 
-bool NDSThumbnail::create(const QString &path, int width, int height, QImage &img)
+
+KIO::ThumbnailResult NDSThumbnail::create(const KIO::ThumbnailRequest &request)
 {
     NDSBanner banner;
-    
-    return getNDSBanner(path, banner) && createImageFromBanner(banner, width, height, img);
+
+    if (!getNDSBanner(request.url(), banner)) {
+        return KIO::ThumbnailResult::fail();
+    }
+    return createImageFromBanner(banner, request.targetSize());
 }
+
+#include "ndsthumbnail.moc"

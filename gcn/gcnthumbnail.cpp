@@ -1,18 +1,17 @@
 #include "gcnthumbnail.h"
+#include <KPluginFactory>
 #include <QFile>
 #include <QImage>
 #include <QtEndian>
 #include <QVector>
 #include <string.h>
-#include <iostream>
 
-extern "C"
+K_PLUGIN_CLASS_WITH_JSON(GCNThumbnail, "gcnthumbnail.json")
+
+GCNThumbnail::GCNThumbnail(QObject *parent, const QVariantList &args)
+    : KIO::ThumbnailCreator(parent, args)
 {
-    Q_DECL_EXPORT ThumbCreator *new_creator()
-    {
-        return new GCNThumbnail();
-    }
-};
+}
 
 struct Buffer {
     uchar *start;
@@ -116,67 +115,66 @@ static quint32 RGB555A1_to_ARGB32(quint16 value)
     return res;
 }
 
-bool fillImageFromBanner(const Buffer &bannerFile, int width, int height, QImage &img)
+KIO::ThumbnailResult fillImageFromBanner(const Buffer &bannerFile, QSize size)
 {
     if (bannerFile.size() < sizeof(Banner)) {
         qWarning("Banner file is too small");
-        return false;
+        return KIO::ThumbnailResult::fail();
     }
     Banner *banner = reinterpret_cast<Banner *>(bannerFile.start);
     if (strcmp(banner->magic, "BNR1") != 0 && strcmp(banner->magic, "BNR2") != 0) {
         qWarning("Invalid magic word for banner file");
-        return false;
+        return KIO::ThumbnailResult::fail();
     }
     QByteArray pixels(sizeof(quint32) * 96 * 32, 0x00);
 
     size_t pos = 0;
-	for (size_t y = 0; y < 8; y++) {
-		for (size_t x = 0; x < 24; x++) {
-	        for (size_t j = 0; j < 4; j++) {
-		        for (size_t i = 0; i < 4; i++) {
+    for (size_t y = 0; y < 8; y++) {
+        for (size_t x = 0; x < 24; x++) {
+            for (size_t j = 0; j < 4; j++) {
+                for (size_t i = 0; i < 4; i++) {
                     quint32 color = RGB555A1_to_ARGB32(qFromBigEndian<quint16>(banner->graphic_data[pos]));
                     size_t bx = x * 4 + i;
                     size_t by = y * 4 + j;
                     size_t base = bx + by * 96;
                     memcpy(pixels.data() + base * sizeof(uint32_t), &color, sizeof(uint32_t));
-					pos++;
-				}
-			}
-		}
-	}
-    img = QImage((const uchar*)pixels.constData(), 96, 32, 96 * sizeof(uint32_t), QImage::Format_ARGB32);
-    int smallest = width < height * 3 ? width : height * 3;
+                    pos++;
+                }
+            }
+        }
+    }
+    QImage img = QImage((const uchar*)pixels.constData(), 96, 32, 96 * sizeof(uint32_t), QImage::Format_ARGB32);
+    int smallest = size.width() < size.height() * 3 ? size.width() : size.height() * 3;
     int base = 96;
     while (base < smallest) {
         base <<= 1;
     }
     img = img.scaledToWidth(base);
-    return true;
+    return KIO::ThumbnailResult::pass(img);
 }
 
-bool GCNThumbnail::create(const QString &path, int width, int height, QImage &img)
+KIO::ThumbnailResult GCNThumbnail::create(const KIO::ThumbnailRequest &request)
 {
-    QFile file (path);
+    //bool GCNThumbnail::create(const QString &path, int width, int height, QImage &img)
+    QFile file (request.url().toLocalFile());
 
     if(!file.open(QIODevice::ReadOnly)) {
         qWarning("Cannot open file");
-        return false;
+        return KIO::ThumbnailResult::fail();
     }
     Buffer fileBuffer;
     Buffer fst;
     Buffer banner;
     if (!mapFile(file, fileBuffer)) {
-        return false;
+        return KIO::ThumbnailResult::fail();
     }
     if (!getFST(fileBuffer, fst)) {
-        return false;
+        return KIO::ThumbnailResult::fail();
     }
     if (!getFile("opening.bnr", fileBuffer, fst, banner)) {
-        return false;
+        return KIO::ThumbnailResult::fail();
     }
-    if (!fillImageFromBanner(banner, width, height, img)) {
-        return false;
-    }
-    qInfo("Success");
-    return true;
+    return fillImageFromBanner(banner, request.targetSize());
 }
+
+#include "gcnthumbnail.moc"

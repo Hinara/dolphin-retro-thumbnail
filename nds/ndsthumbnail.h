@@ -1,14 +1,14 @@
 #ifndef _NDSCREATOR_H
 #define _NDSCREATOR_H
 
-#include <kio/thumbcreator.h>
+#include <KIO/ThumbnailCreator>
 
-class NDSThumbnail : public ThumbCreator
+class NDSThumbnail : public KIO::ThumbnailCreator
 {
 public:
-	NDSThumbnail() = default;
+	NDSThumbnail(QObject *parent, const QVariantList &args);
 	~NDSThumbnail() override = default;
-	bool create(const QString &path, int width, int height, QImage &img) override;
+	KIO::ThumbnailResult create(const KIO::ThumbnailRequest &request) override;
 };
 
 #endif // _NDSCREATOR_H
